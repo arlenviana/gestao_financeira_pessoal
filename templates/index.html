@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Meu Financeiro | Painel</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="brand-icon">R$</span><div><strong>Meu Financeiro</strong><small>Controle seu dinheiro com clareza</small></div></div>
+  <a class="button button-light" href="{{ url_for('export_csv', start=start, end=end, kind=selected_kind, category=selected_category) }}">Exportar CSV ↗</a>
+</header>
+<main class="container">
+  <section class="welcome">
+    <div><p class="eyebrow">VISÃO GERAL</p><h1>Seu dinheiro, sob controle.</h1><p class="muted">Acompanhe receitas, despesas e objetivos em um só lugar.</p></div>
+    <div class="period-pill">Período: {{ query_start }} — {{ query_end }}</div>
+  </section>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}<div class="messages">{% for category, message in messages %}<div class="notice {{ category }}">{{ message }}</div>{% endfor %}</div>{% endif %}
+  {% endwith %}
+
+  <section class="summary-grid">
+    <article class="summary-card"><div class="card-label">Receitas no período <span class="metric-icon green">↗</span></div><div class="metric">R$ {{ "%.2f"|format(income)|replace(".", ",") }}</div><p class="muted">Todo dinheiro que entrou</p></article>
+    <article class="summary-card"><div class="card-label">Despesas no período <span class="metric-icon red">↘</span></div><div class="metric">R$ {{ "%.2f"|format(expenses)|replace(".", ",") }}</div><p class="muted">Todo dinheiro que saiu</p></article>
+    <article class="summary-card balance-card"><div class="card-label">Saldo do período <span class="metric-icon blue">＝</span></div><div class="metric {% if balance < 0 %}negative{% else %}positive{% endif %}">R$ {{ "%.2f"|format(balance)|replace(".", ",") }}</div><p class="muted">Receitas menos despesas</p></article>
+  </section>
+
+  <section class="content-grid">
+    <article class="panel">
+      <div class="panel-heading"><div><p class="eyebrow">MOVIMENTAÇÕES</p><h2>Adicionar transação</h2></div><span class="panel-icon">＋</span></div>
+      <form action="{{ url_for('add_transaction') }}" method="post" class="form-grid" id="transaction-form">
+        <label>Tipo<select name="kind" id="kind" required><option value="Despesa">Despesa</option><option value="Receita">Receita</option></select></label>
+        <label>Categoria<select name="category" id="category" required></select></label>
+        <label class="full">Descrição<input name="description" placeholder="Ex.: mercado, salário..." maxlength="100" required></label>
+        <label>Valor (R$)<input name="amount" type="number" min="0.01" step="0.01" placeholder="0,00" required></label>
+        <label>Data<input name="transaction_date" type="date" value="{{ today }}" required></label>
+        <label class="full">Observações <input name="notes" placeholder="Opcional" maxlength="250"></label>
+        <button class="button button-primary full" type="submit">Salvar transação</button>
+      </form>
+    </article>
+
+    <article class="panel chart-panel">
+      <div class="panel-heading"><div><p class="eyebrow">ANÁLISE</p><h2>Despesas por categoria</h2></div><span class="panel-icon">◔</span></div>
+      <div class="chart-wrap">{% if chart_labels %}<canvas id="expenseChart" aria-label="Gráfico de despesas por categoria"></canvas>{% else %}<div class="empty-chart"><span>◌</span><p>Sem despesas neste período.</p><small>Cadastre uma despesa para visualizar o gráfico.</small></div>{% endif %}</div>
+    </article>
+  </section>
+
+  <section class="panel transactions-panel">
+    <div class="panel-heading"><div><p class="eyebrow">HISTÓRICO</p><h2>Suas transações</h2></div><span class="count">{{ transactions|length }} registro(s)</span></div>
+    <form method="get" class="filters">
+      <label>De<input type="date" name="start" value="{{ start }}"></label>
+      <label>Até<input type="date" name="end" value="{{ end }}"></label>
+      <label>Tipo<select name="kind"><option value="">Todos</option><option value="Receita" {% if selected_kind == 'Receita' %}selected{% endif %}>Receita</option><option value="Despesa" {% if selected_kind == 'Despesa' %}selected{% endif %}>Despesa</option></select></label>
+      <label>Categoria<select name="category"><option value="">Todas</option>{% for kind_name, cats in categories.items() %}{% for cat in cats %}<option value="{{ cat }}" {% if selected_category == cat %}selected{% endif %}>{{ cat }}</option>{% endfor %}{% endfor %}</select></label>
+      <button class="button button-primary" type="submit">Filtrar</button><a class="button button-outline" href="{{ url_for('index') }}">Limpar</a>
+    </form>
+    <div class="table-wrap"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Tipo</th><th class="right">Valor</th><th></th></tr></thead><tbody>
+      {% for t in transactions %}
+      <tr><td>{{ t.transaction_date }}</td><td><strong>{{ t.description }}</strong>{% if t.notes %}<small class="table-note">{{ t.notes }}</small>{% endif %}</td><td><span class="category-tag">{{ t.category }}</span></td><td><span class="type-tag {{ 'income' if t.kind == 'Receita' else 'expense' }}">{{ t.kind }}</span></td><td class="right amount {{ 'positive' if t.kind == 'Receita' else 'negative' }}">{{ '+' if t.kind == 'Receita' else '−' }} R$ {{ "%.2f"|format(t.amount)|replace(".", ",") }}</td><td><form method="post" action="{{ url_for('delete_transaction', transaction_id=t.id) }}" onsubmit="return confirm('Excluir esta transação?')"><button class="icon-button" title="Excluir transação" aria-label="Excluir transação">×</button></form></td></tr>
+      {% else %}<tr><td colspan="6" class="empty-row">Nenhuma transação encontrada para este período.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+
+  <section class="panel goals-panel">
+    <div class="panel-heading"><div><p class="eyebrow">PLANEJAMENTO</p><h2>Metas de economia</h2></div><span class="panel-icon">◎</span></div>
+    <form action="{{ url_for('add_goal') }}" method="post" class="goal-form">
+      <label>Nome da meta<input name="name" placeholder="Ex.: viagem, reserva de emergência" maxlength="100" required></label>
+      <label>Valor desejado (R$)<input type="number" name="target_amount" min="0.01" step="0.01" placeholder="5000" required></label>
+      <label>Já economizado (R$)<input type="number" name="saved_amount" min="0" step="0.01" value="0" required></label>
+      <label>Prazo (opcional)<input type="date" name="deadline"></label>
+      <button class="button button-primary" type="submit">Criar meta</button>
+    </form>
+    <div class="goals-grid">
+      {% for goal in goals %}
+      {% set percent = (goal.saved_amount / goal.target_amount * 100) %}
+      <article class="goal-card"><div class="goal-title"><h3>{{ goal.name }}</h3><span>{{ [percent|round|int, 100]|min }}%</span></div><div class="progress-track"><div class="progress-fill" style="width: {{ [percent, 100]|min }}%"></div></div><div class="goal-values"><strong>R$ {{ "%.2f"|format(goal.saved_amount)|replace(".", ",") }}</strong><span>de R$ {{ "%.2f"|format(goal.target_amount)|replace(".", ",") }}</span></div>{% if goal.deadline %}<p class="muted goal-deadline">Prazo: {{ goal.deadline }}</p>{% endif %}
+      <form method="post" action="{{ url_for('update_goal', goal_id=goal.id) }}" class="goal-update"><label>Atualizar valor acumulado<input type="number" name="saved_amount" min="0" step="0.01" value="{{ goal.saved_amount }}" required></label><button class="button button-outline" type="submit">Atualizar</button></form>
+      <form method="post" action="{{ url_for('delete_goal', goal_id=goal.id) }}" onsubmit="return confirm('Excluir esta meta?')" class="delete-goal"><button type="submit" class="text-button">Excluir meta</button></form></article>
+      {% else %}<div class="empty-goals">Você ainda não criou metas. Defina um objetivo para acompanhar seu progresso.</div>{% endfor %}
+    </div>
+  </section>
+  <footer>Meu Financeiro · Seus dados ficam armazenados localmente neste projeto.</footer>
+</main>
+<script>
+const categories = {{ categories|tojson }};
+const kindSelect = document.getElementById("kind");
+const categorySelect = document.getElementById("category");
+function updateCategories() {
+  const options = categories[kindSelect.value] || [];
+  const current = categorySelect.value;
+  categorySelect.innerHTML = "";
+  options.forEach(cat => {
+    const option = document.createElement("option");
+    option.value = cat; option.textContent = cat;
+    categorySelect.appendChild(option);
+  });
+  if (options.includes(current)) categorySelect.value = current;
+}
+kindSelect.addEventListener("change", updateCategories);
+updateCategories();
+{% if chart_labels %}
+const ctx = document.getElementById("expenseChart");
+new Chart(ctx, {
+  type: "doughnut",
+  data: { labels: {{ chart_labels|tojson }}, datasets: [{ data: {{ chart_values|tojson }}, borderWidth: 3, borderColor: "#ffffff", hoverOffset: 8 }] },
+  options: { responsive: true, maintainAspectRatio: false, cutout: "66%", plugins: {
+    legend: { position: "bottom", labels: { usePointStyle: true, padding: 18, font: { family: "Inter, sans-serif", size: 12 } } },
+    tooltip: { callbacks: { label: function(context) { return " " + context.label + ": R$ " + Number(context.raw).toLocaleString("pt-BR", {minimumFractionDigits: 2}); } } }
+  }}
+});
+{% endif %}
+</script>
+</body>
+</html>
